@@ -24,64 +24,25 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Clone doomgeneric
-        run: |
-          git clone --depth 1 https://github.com/ozkl/doomgeneric.git
-
-      - name: Clone Chocolate Doom for DEHACKED sources
-        run: |
-          git clone --depth 1 https://github.com/chocolate-doom/chocolate-doom.git
+        run: git clone --depth 1 https://github.com/ozkl/doomgeneric.git
 
       - name: Clone Nuked OPL3
-        run: |
-          git clone --depth 1 https://github.com/nukeykt/Nuked-OPL3.git
+        run: git clone --depth 1 https://github.com/nukeykt/Nuked-OPL3.git
 
-      - name: Copy Vita backend and OPL3 into engine
+      - name: Copy project files into engine
         run: |
-          cp doomgeneric_vita.c doomgeneric/doomgeneric/doomgeneric_vita.c
-          cp Nuked-OPL3/opl3.h doomgeneric/doomgeneric/opl3.h
-          cp Nuked-OPL3/opl3.c doomgeneric/doomgeneric/opl3.c
+          cp doomgeneric_vita.c doomgeneric/doomgeneric/
+          cp deh_loader.c doomgeneric/doomgeneric/
+          cp deh_loader.h doomgeneric/doomgeneric/
+          cp Nuked-OPL3/opl3.h doomgeneric/doomgeneric/
+          cp Nuked-OPL3/opl3.c doomgeneric/doomgeneric/
 
-      - name: Add DEHACKED support from Chocolate Doom
-        run: |
-          cd doomgeneric/doomgeneric
-          # Copy core DEH parsing/processing files from Chocolate Doom
-          for f in deh_deh.c deh_io.c deh_main.c deh_mapping.c deh_text.c; do
-            if [ -f "../../chocolate-doom/src/$f" ]; then
-              cp "../../chocolate-doom/src/$f" .
-              echo "Copied src/$f"
-            fi
-          done
-          # Copy Doom-specific DEH handler files
-          for f in deh_ammo.c deh_bexstr.c deh_cheat.c deh_doom.c deh_frame.c deh_misc.c deh_ptr.c deh_sound.c deh_thing.c deh_weapon.c; do
-            if [ -f "../../chocolate-doom/src/doom/$f" ]; then
-              cp "../../chocolate-doom/src/doom/$f" .
-              echo "Copied doom/$f"
-            fi
-          done
-          # Copy ALL DEH headers from both locations
-          for f in ../../chocolate-doom/src/deh_*.h; do
-            [ -f "$f" ] && cp "$f" . && echo "Copied header $(basename $f)"
-          done
-          for f in ../../chocolate-doom/src/doom/deh_*.h; do
-            base=$(basename "$f")
-            if [ -f "$f" ] && [ ! -f "./$base" ]; then
-              cp "$f" . && echo "Copied doom header $base"
-            fi
-          done
-          echo "=== DEHACKED files ==="
-          ls -1 deh_*.c 2>/dev/null | wc -l
-          ls -1 deh_*.c 2>/dev/null
-
-      - name: Patch doomgeneric for PWAD and DEHACKED compatibility
+      - name: Patch doomgeneric for PWAD compatibility
         run: |
           cd doomgeneric/doomgeneric
           # Disable RANGECHECK
           sed -i 's/^#define RANGECHECK/\/\/ #define RANGECHECK/' doomdef.h
-          # Enable FEATURE_DEHACKED
-          if ! grep -q "^#define FEATURE_DEHACKED" doomfeatures.h 2>/dev/null; then
-            echo '#define FEATURE_DEHACKED 1' >> doomfeatures.h
-          fi
-          # Patch d_main.c to auto-load DEHACKED lumps from PWADs
+          # Inject DEH_LoadFromWADs() call after W_GenerateHashTable()
           python3 ${GITHUB_WORKSPACE}/scripts/patch_dehacked.py
           # Fix R_DrawVisSprite: modular wrapping for PWAD sprites
           sed -i '/texturecolumn = frac>>FRACBITS;/a\\tif (SHORT(patch->width) > 0) { texturecolumn = texturecolumn % SHORT(patch->width); if (texturecolumn < 0) texturecolumn += SHORT(patch->width); }' r_things.c
@@ -90,8 +51,7 @@ jobs:
           echo "=== All patches applied ==="
 
       - name: Generate assets
-        run: |
-          python3 scripts/gen_assets.py || echo "Asset generation skipped"
+        run: python3 scripts/gen_assets.py || echo "Asset generation skipped"
 
       - name: Build
         run: |
