@@ -16,7 +16,7 @@ inject_code = """W_GenerateHashTable();
     // VITA: Auto-load DEHACKED lumps from PWADs for total conversion support
     {
         int i, loaded = 0;
-        for (i = numiwadlumps; i < numlumps; ++i)
+        for (i = 0; i < numlumps; ++i)
         {
             if (!strncasecmp(lumpinfo[i].name, "DEHACKED", 8))
             {
