@@ -2,6 +2,7 @@
  * Minimal DEHACKED lump parser for doomgeneric.
  * Self-contained: uses ONLY doomgeneric's native types.
  * Handles Thing, Frame, Pointer, Weapon, Text blocks.
+ * Supports both WAD lumps and external .DEH files.
  */
 #include <ctype.h>
 #include <stdarg.h>
@@ -270,11 +271,43 @@ static void p_skip(void) {
   }
 }
 
+/* ---- Shared parsing core ---- */
+static void deh_parse_data(const char *data, int len) {
+  char line[256];
+
+  dp = data;
+  dend = data + len;
+
+  while (deh_readline(line, sizeof(line))) {
+    char *l = skipws(line);
+    if (blank(l))
+      continue;
+
+    if (pfx(l, "Thing "))
+      p_thing(atoi(l + 6));
+    else if (pfx(l, "Frame "))
+      p_frame(atoi(l + 6));
+    else if (pfx(l, "Pointer "))
+      p_pointer(l);
+    else if (pfx(l, "Weapon "))
+      p_weapon(atoi(l + 7));
+    else if (pfx(l, "Text ")) {
+      int ol = 0, nl = 0;
+      sscanf(l + 5, "%d %d", &ol, &nl);
+      p_text(ol, nl);
+    } else if (pfx(l, "Ammo ") || pfx(l, "Misc ") || pfx(l, "Sound ") ||
+               pfx(l, "Cheat "))
+      p_skip();
+    /* else: header lines, comments, [STRINGS] etc. - skip */
+  }
+}
+
 /* ---- Public API ---- */
+
+/* Load DEHACKED lumps from all loaded WADs */
 void DEH_LoadFromWADs(void) {
   unsigned int i;
   int loaded = 0;
-  char line[256];
 
   deh_log("DEH_LoadFromWADs starting");
 
@@ -312,31 +345,7 @@ void DEH_LoadFromWADs(void) {
     memcpy(data, lumpdata, len);
     data[len] = '\0';
 
-    dp = data;
-    dend = data + len;
-
-    while (deh_readline(line, sizeof(line))) {
-      char *l = skipws(line);
-      if (blank(l))
-        continue;
-
-      if (pfx(l, "Thing "))
-        p_thing(atoi(l + 6));
-      else if (pfx(l, "Frame "))
-        p_frame(atoi(l + 6));
-      else if (pfx(l, "Pointer "))
-        p_pointer(l);
-      else if (pfx(l, "Weapon "))
-        p_weapon(atoi(l + 7));
-      else if (pfx(l, "Text ")) {
-        int ol = 0, nl = 0;
-        sscanf(l + 5, "%d %d", &ol, &nl);
-        p_text(ol, nl);
-      } else if (pfx(l, "Ammo ") || pfx(l, "Misc ") || pfx(l, "Sound ") ||
-                 pfx(l, "Cheat "))
-        p_skip();
-      /* else: header lines, comments, etc. - skip */
-    }
+    deh_parse_data(data, len);
 
     free(data);
     loaded++;
@@ -346,4 +355,54 @@ void DEH_LoadFromWADs(void) {
     deh_logf("%d DEHACKED lump(s) loaded successfully", loaded);
   else
     deh_log("No DEHACKED lumps found in any WAD");
+}
+
+/* Load a .DEH file from disk */
+void DEH_LoadFromFile(const char *path) {
+  FILE *f;
+  long fsize;
+  char *data;
+
+  if (!path)
+    return;
+
+  deh_logf("Loading DEH file: %s", path);
+
+  f = fopen(path, "rb");
+  if (!f) {
+    deh_logf("DEH file not found: %s", path);
+    return;
+  }
+
+  fseek(f, 0, SEEK_END);
+  fsize = ftell(f);
+  fseek(f, 0, SEEK_SET);
+
+  if (fsize <= 0 || fsize > 1024 * 1024) {
+    deh_logf("DEH file invalid size: %ld", fsize);
+    fclose(f);
+    return;
+  }
+
+  data = (char *)malloc(fsize + 1);
+  if (!data) {
+    deh_log("Failed to allocate memory for DEH file");
+    fclose(f);
+    return;
+  }
+
+  if ((long)fread(data, 1, fsize, f) != fsize) {
+    deh_log("Failed to read DEH file");
+    free(data);
+    fclose(f);
+    return;
+  }
+  fclose(f);
+  data[fsize] = '\0';
+
+  save_act();
+  deh_parse_data(data, (int)fsize);
+  free(data);
+
+  deh_logf("DEH file loaded: %s (%ld bytes)", path, fsize);
 }
