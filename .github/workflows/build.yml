@@ -44,6 +44,8 @@ jobs:
           sed -i 's/^#define RANGECHECK/\/\/ #define RANGECHECK/' doomdef.h
           # Inject DEH_LoadFromWADs() call after W_GenerateHashTable()
           python3 ${GITHUB_WORKSPACE}/scripts/patch_dehacked.py
+          # Expand sprite/flat namespace to cover ALL WADs (IWAD+PWAD)
+          python3 ${GITHUB_WORKSPACE}/scripts/patch_sprite_range.py
           # Fix R_DrawVisSprite: modular wrapping for PWAD sprites
           sed -i '/texturecolumn = frac>>FRACBITS;/a\\tif (SHORT(patch->width) > 0) { texturecolumn = texturecolumn % SHORT(patch->width); if (texturecolumn < 0) texturecolumn += SHORT(patch->width); }' r_things.c
           # Safety: clamp dc_yl and dc_yh in R_DrawColumn
