@@ -40,10 +40,10 @@ ux0:/data/batmandoom/batman.wad
 | L Trigger | Run / Weapon cycle modifier |
 | Start | Menu (Escape) |
 | Select | Enter / Confirm |
-| L+R+UP | Quick Save (slot 0) |
-| L+R+DOWN | Quick Load (slot 0) |
+| UP | Quick Save (slot 0) |
+| DOWN | Quick Load (slot 0) |
 | L+D-Pad | Cycle weapons |
-| Touch (top bar) | Select weapon 1–7 |
+
 
 ## Building
 
@@ -89,3 +89,4 @@ Debug logs are written to `ux0:/data/batmandoom/debug.log`.
 ## License
 
 This port code is provided as-is for educational and homebrew purposes. Batman Doom and Doom II are properties of their respective owners.
+
