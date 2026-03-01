@@ -32,19 +32,7 @@ if 'DEH_LoadFromWADs' not in content:
     else:
         print('WARNING: W_GenerateHashTable not found')
 else:
-    # Already has DEH_LoadFromWADs, add DEH_LoadFromFile if missing
-    if 'DEH_LoadFromFile' not in content:
-        old = 'DEH_LoadFromWADs();'
-        new = old + '''
-
-    // VITA: Load external .DEH file (Batman Doom uses BATMAN.DEH)
-    DEH_LoadFromFile("ux0:/data/batmandoom/batman.deh");
-    DEH_LoadFromFile("ux0:/data/batmandoom/BATMAN.DEH");
-    DEH_LoadFromFile("ux0:/data/batmandoom/Batman.deh");'''
-        content = content.replace(old, new, 1)
-        print('Added DEH_LoadFromFile() calls')
-    else:
-        print('DEH loading already present')
+    print('DEH loading already present')
 
 with open('d_main.c', 'w') as f:
     f.write(content)
