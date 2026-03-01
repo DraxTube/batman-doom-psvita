@@ -1,4 +1,3 @@
-
 name: Build Batman Doom Vita VPK
 
 on:
@@ -28,6 +27,10 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/ozkl/doomgeneric.git
 
+      - name: Clone Chocolate Doom for DEHACKED sources
+        run: |
+          git clone --depth 1 https://github.com/chocolate-doom/chocolate-doom.git
+
       - name: Clone Nuked OPL3
         run: |
           git clone --depth 1 https://github.com/nukeykt/Nuked-OPL3.git
@@ -38,30 +41,57 @@ jobs:
           cp Nuked-OPL3/opl3.h doomgeneric/doomgeneric/opl3.h
           cp Nuked-OPL3/opl3.c doomgeneric/doomgeneric/opl3.c
 
-      - name: Patch doomgeneric for PWAD compatibility
+      - name: Add DEHACKED support from Chocolate Doom
         run: |
           cd doomgeneric/doomgeneric
-          # Disable RANGECHECK (fatal debug asserts) - standard for release builds
-          sed -i 's/^#define RANGECHECK/\/\/ #define RANGECHECK  \/\/ disabled for PWAD compat/' doomdef.h
+          # Copy core DEH parsing/processing files from Chocolate Doom
+          for f in deh_deh.c deh_io.c deh_main.c deh_mapping.c deh_text.c; do
+            if [ -f "../../chocolate-doom/src/$f" ]; then
+              cp "../../chocolate-doom/src/$f" .
+              echo "Copied src/$f"
+            fi
+          done
+          # Copy Doom-specific DEH handler files
+          for f in deh_ammo.c deh_bexstr.c deh_cheat.c deh_doom.c deh_frame.c deh_misc.c deh_ptr.c deh_sound.c deh_thing.c deh_weapon.c; do
+            if [ -f "../../chocolate-doom/src/doom/$f" ]; then
+              cp "../../chocolate-doom/src/doom/$f" .
+              echo "Copied doom/$f"
+            fi
+          done
+          # Copy missing DEH headers
+          for f in deh_deh.h deh_io.h deh_main.h deh_mapping.h deh_misc.h deh_str.h; do
+            src1="../../chocolate-doom/src/$f"
+            src2="../../chocolate-doom/src/doom/$f"
+            if [ -f "$src1" ] && [ ! -f "./$f" ]; then
+              cp "$src1" . && echo "Copied header $f"
+            elif [ -f "$src2" ] && [ ! -f "./$f" ]; then
+              cp "$src2" . && echo "Copied doom header $f"
+            fi
+          done
+          echo "=== DEHACKED files ==="
+          ls -1 deh_*.c 2>/dev/null | wc -l
+          ls -1 deh_*.c 2>/dev/null
 
-          # Fix R_DrawVisSprite: use modular wrapping instead of hard clamp
-          # Hard clamping causes PWAD sprites (like Batman enemies) to render
-          # from column 0 repeatedly, making them invisible or flickering.
+      - name: Patch doomgeneric for PWAD and DEHACKED compatibility
+        run: |
+          cd doomgeneric/doomgeneric
+          # Disable RANGECHECK
+          sed -i 's/^#define RANGECHECK/\/\/ #define RANGECHECK/' doomdef.h
+          # Enable FEATURE_DEHACKED
+          if ! grep -q "^#define FEATURE_DEHACKED" doomfeatures.h 2>/dev/null; then
+            echo '#define FEATURE_DEHACKED 1' >> doomfeatures.h
+          fi
+          # Patch d_main.c to auto-load DEHACKED lumps from PWADs
+          python3 ../../scripts/patch_dehacked.py
+          # Fix R_DrawVisSprite: modular wrapping for PWAD sprites
           sed -i '/texturecolumn = frac>>FRACBITS;/a\\tif (SHORT(patch->width) > 0) { texturecolumn = texturecolumn % SHORT(patch->width); if (texturecolumn < 0) texturecolumn += SHORT(patch->width); }' r_things.c
-
-          # Protect R_DrawColumn from out-of-bounds dc_x
-          sed -i '/void R_DrawColumn/,/^{/{/^{/a\\    if (dc_x < 0 || dc_x >= SCREENWIDTH) return;\n}' r_draw.c || true
-
           # Safety: clamp dc_yl and dc_yh in R_DrawColumn
           sed -i 's/count = dc_yh - dc_yl;/if (dc_yl < 0) dc_yl = 0; if (dc_yh >= SCREENHEIGHT) dc_yh = SCREENHEIGHT - 1; count = dc_yh - dc_yl;/' r_draw.c || true
-
-          echo "RANGECHECK disabled, sprite wrapping fix applied"
-          grep -n "RANGECHECK" doomdef.h | head -3
-          grep -n "texturecolumn" r_things.c | head -10
+          echo "=== All patches applied ==="
 
       - name: Generate assets
         run: |
-          python3 scripts/gen_assets.py || echo "Asset generation skipped (no source PNGs)"
+          python3 scripts/gen_assets.py || echo "Asset generation skipped"
 
       - name: Build
         run: |
