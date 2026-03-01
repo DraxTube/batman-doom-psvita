@@ -1,71 +1,94 @@
 #!/usr/bin/env python3
-"""Patch r_things.c to allow PWAD sprites to override IWAD sprites
-instead of calling I_Error on duplicates."""
+"""Patch r_things.c to allow PWAD sprites to override IWAD sprites.
+
+Instead of trying to match exact whitespace (tabs vs spaces), we use
+line-by-line scanning to find and neutralize the I_Error calls related
+to duplicate sprite lumps.
+"""
+import re
 
 with open('r_things.c', 'r') as f:
-    content = f.read()
+    lines = f.readlines()
 
-patched = False
+count = 0
 
-# 1. Fix rotation=0 duplicate: "multip rot=0 lump"
-#    Change I_Error to just silently override
-old1 = '''    if (sprtemp[frame].rotate == false)
-\t    I_Error ("R_InitSprites: Sprite %s frame %c has "
-\t\t     "multip rot=0 lump", spritename, 'A'+frame);'''
-new1 = '''    if (sprtemp[frame].rotate == false)
-\t    { /* VITA: allow PWAD override instead of error */ }'''
+# We need to find all I_Error calls related to sprite duplicates and
+# replace them with empty blocks.
+# The patterns are:
+#   1) "multip rot=0 lump"
+#   2) "has rotations" + "and a rot=0 lump"  (two occurrences)
+#   3) "has two lumps mapped to it"
 
-if old1 in content:
-    content = content.replace(old1, new1, 1)
-    patched = True
-    print('Patched: rot=0 multip override')
+i = 0
+while i < len(lines):
+    line = lines[i]
 
-# 2. Fix rotation=0 vs rotations conflict
-old2_a = '''    if (sprtemp[frame].rotate == true)
-\t    I_Error ("R_InitSprites: Sprite %s frame %c has rotations "
-\t\t     "and a rot=0 lump", spritename, 'A'+frame);
+    # Match lines containing these specific I_Error messages
+    if 'I_Error' in line and (
+        'multip rot=0 lump' in line or
+        'and a rot=0 lump' in line or
+        'has two lumps mapped to it' in line or
+        'has rotations' in line
+    ):
+        # This is a single-line I_Error with the message
+        # Replace: I_Error(...); with { /* VITA: allow override */ }
+        indent = line[:len(line) - len(line.lstrip())]
+        lines[i] = indent + '{ /* VITA: allow PWAD override */ }\n'
+        # Remove continuation lines (lines that are just string literals or args)
+        j = i + 1
+        while j < len(lines):
+            stripped = lines[j].strip()
+            if stripped.startswith('"') or stripped.startswith('spritename') or stripped == '':
+                # This is a continuation of the I_Error call
+                if stripped.endswith(');'):
+                    lines[j] = ''
+                    j += 1
+                    break
+                lines[j] = ''
+                j += 1
+            else:
+                break
+        count += 1
+        i = j
+        continue
 
-\tsprtemp[frame].rotate = false;'''
-new2_a = '''    if (sprtemp[frame].rotate == true)
-\t    { /* VITA: allow PWAD rot=0 to override rotations */ }
+    # Also match the case where I_Error starts on one line and the message is on the next
+    if 'I_Error' in line and 'R_InitSprites' in line:
+        # Check if next lines contain our target messages
+        combined = line
+        for k in range(1, 4):
+            if i + k < len(lines):
+                combined += lines[i + k]
+        if ('multip rot=0 lump' in combined or
+            'and a rot=0 lump' in combined or
+            'has two lumps mapped to it' in combined):
+            indent = line[:len(line) - len(line.lstrip())]
+            lines[i] = indent + '{ /* VITA: allow PWAD override */ }\n'
+            # Remove continuation lines
+            j = i + 1
+            while j < len(lines):
+                stripped = lines[j].strip()
+                if (stripped.startswith('"') or
+                    stripped.startswith('spritename') or
+                    stripped.startswith("'") or
+                    stripped == ''):
+                    should_stop = stripped.endswith(');')
+                    lines[j] = ''
+                    j += 1
+                    if should_stop:
+                        break
+                else:
+                    break
+            count += 1
+            i = j
+            continue
 
-\tsprtemp[frame].rotate = false;'''
+    i += 1
 
-if old2_a in content:
-    content = content.replace(old2_a, new2_a, 1)
-    patched = True
-    print('Patched: rot=0 vs rotations override')
-
-# 3. Fix the reverse: rotations vs rot=0 conflict
-old2_b = '''    // the lump is only used for one rotation
-    if (sprtemp[frame].rotate == false)
-\tI_Error ("R_InitSprites: Sprite %s frame %c has rotations "
-\t\t "and a rot=0 lump", spritename, 'A'+frame);'''
-new2_b = '''    // the lump is only used for one rotation
-    if (sprtemp[frame].rotate == false)
-\t{ /* VITA: allow PWAD rotations to override rot=0 */ }'''
-
-if old2_b in content:
-    content = content.replace(old2_b, new2_b, 1)
-    patched = True
-    print('Patched: rotations vs rot=0 override')
-
-# 4. Fix the main duplicate error: "has two lumps mapped to it"
-old3 = '''    if (sprtemp[frame].lump[rotation] != -1)
-\tI_Error ("R_InitSprites: Sprite %s : %c : %c "
-\t\t "has two lumps mapped to it",
-\t\t spritename, 'A'+frame, '1'+rotation);'''
-new3 = '''    if (sprtemp[frame].lump[rotation] != -1)
-\t{ /* VITA: allow PWAD to override existing sprite lump */ }'''
-
-if old3 in content:
-    content = content.replace(old3, new3, 1)
-    patched = True
-    print('Patched: duplicate lump override (main fix)')
-
-if patched:
+if count > 0:
     with open('r_things.c', 'w') as f:
-        f.write(content)
+        f.writelines(lines)
+    print(f'Patched {count} I_Error calls in R_InstallSpriteLump')
     print('r_things.c patched successfully')
 else:
-    print('WARNING: No patterns matched in r_things.c - may already be patched')
+    print('WARNING: No sprite duplicate I_Error calls found - may already be patched')
