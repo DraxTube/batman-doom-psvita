@@ -15,7 +15,9 @@ extern char *savegamedir;
 extern void G_SaveGame(int slot, char *description);
 extern void G_LoadGame(char *name);
 extern char *P_SaveGameFile(int slot);
-extern int gamestate; /* 0 = GS_LEVEL, only save/load during gameplay */
+extern int gamestate;  /* 0 = GS_LEVEL */
+extern int gameaction; /* ga_nothing = 0 */
+extern int usergame;   /* true if playing a real game */
 #include "opl3.h"
 #include <math.h>
 #include <psp2/apputil.h>
@@ -112,6 +114,7 @@ static int kq_r = 0, kq_w = 0;
 static SceCtrlData pad_prev;
 static int input_init = 0, analog_held[6];
 static int current_weapon = 1, weapon_cycle_cooldown = 0;
+static unsigned char pending_weapon_release = 0; /* key to release next tic */
 
 static void kq_push(int p, unsigned char k) {
   int n = (kq_w + 1) % KQUEUE_SZ;
@@ -186,6 +189,12 @@ static void do_poll_input(void) {
     }
   }
 
+  /* Release weapon key from previous tic */
+  if (pending_weapon_release) {
+    kq_push(0, pending_weapon_release);
+    pending_weapon_release = 0;
+  }
+
   /* D-Pad: direct quicksave/load and weapon cycling */
   {
     int u = (pad.buttons & SCE_CTRL_UP) != 0;
@@ -198,14 +207,13 @@ static void do_poll_input(void) {
     int rw = (pad_prev.buttons & SCE_CTRL_RIGHT) != 0;
 
     /* D-Pad Up = Quick Save (only during gameplay) */
-    if (u && !uw && quicksave_cooldown == 0 && gamestate == 0) {
+    if (u && !uw && quicksave_cooldown == 0 && gamestate == 0 && usergame) {
       G_SaveGame(0, "VITA SAVE");
-      debug_logf("QuickSave slot 0, dir=%s",
-                 savegamedir ? savegamedir : "(null)");
+      debug_logf("QuickSave slot 0");
       quicksave_cooldown = TICRATE * 2;
     }
     /* D-Pad Down = Quick Load (only during gameplay) */
-    if (d && !dw && quickload_cooldown == 0 && gamestate == 0) {
+    if (d && !dw && quickload_cooldown == 0 && gamestate == 0 && usergame) {
       char *path = P_SaveGameFile(0);
       if (path) {
         G_LoadGame(path);
@@ -219,6 +227,7 @@ static void do_poll_input(void) {
       if (current_weapon > 7)
         current_weapon = 1;
       kq_push(1, '0' + current_weapon);
+      pending_weapon_release = '0' + current_weapon;
       weapon_cycle_cooldown = 10;
     }
     /* D-Pad Left = Previous Weapon */
@@ -227,6 +236,7 @@ static void do_poll_input(void) {
       if (current_weapon < 1)
         current_weapon = 7;
       kq_push(1, '0' + current_weapon);
+      pending_weapon_release = '0' + current_weapon;
       weapon_cycle_cooldown = 10;
     }
   }
@@ -1177,9 +1187,14 @@ void I_UpdateSoundParams(int handle, int vol, int sep) {
   }
   sceKernelUnlockMutex(sfx_mutex, 1);
 }
+void I_InitMusic(void); /* forward decl */
 void I_InitSound(boolean use_sfx_prefix) {
   (void)use_sfx_prefix;
   start_audio_system();
+  /* doomgeneric's S_Init does NOT call I_InitMusic,
+     so we must initialize music (GENMIDI) here */
+  I_InitMusic();
+  debug_log("I_InitSound + I_InitMusic complete");
 }
 void I_ShutdownSound(void) {
   sfx_running = 0;
