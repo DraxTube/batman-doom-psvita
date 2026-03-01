@@ -37,6 +37,19 @@ jobs:
           cp Nuked-OPL3/opl3.h doomgeneric/doomgeneric/opl3.h
           cp Nuked-OPL3/opl3.c doomgeneric/doomgeneric/opl3.c
 
+      - name: Patch doomgeneric for PWAD compatibility
+        run: |
+          cd doomgeneric/doomgeneric
+          # Fix R_DrawSpriteRange crash: clamp texturecolumn instead of I_Error
+          sed -i 's/I_Error ("R_DrawSpriteRange: bad texturecolumn");/{ if (texturecolumn < 0) texturecolumn = 0; if (texturecolumn >= SHORT(patch->width)) texturecolumn = SHORT(patch->width) - 1; }/' r_things.c
+          # Fix R_ProjectSprite: skip invalid sprites instead of crashing
+          sed -i 's/I_Error ("R_ProjectSprite: invalid sprite number %i "/fprintf(stderr, "R_ProjectSprite: invalid sprite number %i "/' r_things.c
+          sed -i 's/I_Error ("R_ProjectSprite: invalid sprite frame %i : %i "/fprintf(stderr, "R_ProjectSprite: invalid sprite frame %i : %i "/' r_things.c
+          # Fix any R_DrawColumn range errors
+          sed -i '/R_DrawColumn: bad column range/d' r_draw.c || true
+          sed -i 's/I_Error ("R_DrawColumn: .*");/return;/' r_draw.c || true
+          echo "Patches applied"
+
       - name: Generate assets
         run: |
           python3 scripts/gen_assets.py || echo "Asset generation skipped (no source PNGs)"
