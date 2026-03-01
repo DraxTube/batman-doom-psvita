@@ -58,14 +58,14 @@ jobs:
               echo "Copied doom/$f"
             fi
           done
-          # Copy missing DEH headers
-          for f in deh_deh.h deh_io.h deh_main.h deh_mapping.h deh_misc.h deh_str.h; do
-            src1="../../chocolate-doom/src/$f"
-            src2="../../chocolate-doom/src/doom/$f"
-            if [ -f "$src1" ] && [ ! -f "./$f" ]; then
-              cp "$src1" . && echo "Copied header $f"
-            elif [ -f "$src2" ] && [ ! -f "./$f" ]; then
-              cp "$src2" . && echo "Copied doom header $f"
+          # Copy ALL DEH headers from both locations
+          for f in ../../chocolate-doom/src/deh_*.h; do
+            [ -f "$f" ] && cp "$f" . && echo "Copied header $(basename $f)"
+          done
+          for f in ../../chocolate-doom/src/doom/deh_*.h; do
+            base=$(basename "$f")
+            if [ -f "$f" ] && [ ! -f "./$base" ]; then
+              cp "$f" . && echo "Copied doom header $base"
             fi
           done
           echo "=== DEHACKED files ==="
