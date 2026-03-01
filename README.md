@@ -28,4 +28,9 @@ A port of **Batman Doom** (the classic Doom II total conversion by ACE Team) to 
 | UP | Quick Save (slot 0) |
 | DOWN | Quick Load (slot 0) |
 | L+D-Pad | Cycle weapons |
+# HOW TO INSTALL
+- download the data file and put ux0/data
+- install the vpk
+- enjoy the game
+
 
