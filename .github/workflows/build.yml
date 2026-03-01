@@ -1,3 +1,4 @@
+
 name: Build Batman Doom Vita VPK
 
 on:
@@ -42,9 +43,19 @@ jobs:
           cd doomgeneric/doomgeneric
           # Disable RANGECHECK (fatal debug asserts) - standard for release builds
           sed -i 's/^#define RANGECHECK/\/\/ #define RANGECHECK  \/\/ disabled for PWAD compat/' doomdef.h
-          # Add safe bounds clamping in R_DrawVisSprite to prevent bad memory access
-          sed -i '/texturecolumn = frac>>FRACBITS;/a\\tif (texturecolumn < 0) texturecolumn = 0; if (texturecolumn >= SHORT(patch->width)) texturecolumn = SHORT(patch->width) - 1;' r_things.c
-          echo "RANGECHECK disabled, bounds clamping added"
+
+          # Fix R_DrawVisSprite: use modular wrapping instead of hard clamp
+          # Hard clamping causes PWAD sprites (like Batman enemies) to render
+          # from column 0 repeatedly, making them invisible or flickering.
+          sed -i '/texturecolumn = frac>>FRACBITS;/a\\tif (SHORT(patch->width) > 0) { texturecolumn = texturecolumn % SHORT(patch->width); if (texturecolumn < 0) texturecolumn += SHORT(patch->width); }' r_things.c
+
+          # Protect R_DrawColumn from out-of-bounds dc_x
+          sed -i '/void R_DrawColumn/,/^{/{/^{/a\\    if (dc_x < 0 || dc_x >= SCREENWIDTH) return;\n}' r_draw.c || true
+
+          # Safety: clamp dc_yl and dc_yh in R_DrawColumn
+          sed -i 's/count = dc_yh - dc_yl;/if (dc_yl < 0) dc_yl = 0; if (dc_yh >= SCREENHEIGHT) dc_yh = SCREENHEIGHT - 1; count = dc_yh - dc_yl;/' r_draw.c || true
+
+          echo "RANGECHECK disabled, sprite wrapping fix applied"
           grep -n "RANGECHECK" doomdef.h | head -3
           grep -n "texturecolumn" r_things.c | head -10
 
