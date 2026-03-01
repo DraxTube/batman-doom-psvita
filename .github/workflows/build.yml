@@ -27,9 +27,15 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/ozkl/doomgeneric.git
 
-      - name: Copy Vita backend into engine
+      - name: Clone Nuked OPL3
+        run: |
+          git clone --depth 1 https://github.com/nukeykt/Nuked-OPL3.git
+
+      - name: Copy Vita backend and OPL3 into engine
         run: |
           cp doomgeneric_vita.c doomgeneric/doomgeneric/doomgeneric_vita.c
+          cp Nuked-OPL3/opl3.h doomgeneric/doomgeneric/opl3.h
+          cp Nuked-OPL3/opl3.c doomgeneric/doomgeneric/opl3.c
 
       - name: Generate assets
         run: |
