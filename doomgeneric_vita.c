@@ -843,8 +843,12 @@ static void start_audio_system(void) {
 }
 
 /* DG interface */
-void DG_Init(void) { base_time = get_ms(); }
-void DG_DrawFrame(void) {}
+void DG_Init(void) {
+  debug_log("DG_Init called");
+  base_time = get_ms();
+}
+void DG_DrawFrame(
+    void) { /* intentionally empty – rendering via I_FinishUpdate */ }
 void DG_SleepMs(uint32_t ms) { sceKernelDelayThread(ms * 1000); }
 uint32_t DG_GetTicksMs(void) { return get_ms() - base_time; }
 int DG_GetKey(int *pressed, unsigned char *key) {
@@ -876,8 +880,9 @@ void I_Error(const char *error, ...) {
   va_start(a, error);
   vsnprintf(buf, sizeof(buf), error, a);
   va_end(a);
-  debug_log(buf);
+  debug_logf("I_Error: %s", buf);
   sfx_running = 0;
+  sceKernelDelayThread(2000000); /* 2s pause so log flushes */
   sceKernelExitProcess(0);
 }
 void I_WaitVBL(int c) { sceKernelDelayThread(c * 14286); }
@@ -891,9 +896,16 @@ byte *I_ZoneBase(int *size) {
   *size = 16 * 1024 * 1024;
   p = (byte *)malloc(*size);
   if (!p) {
+    debug_log("ZoneBase: 16MB alloc failed, trying 8MB");
     *size = 8 * 1024 * 1024;
     p = (byte *)malloc(*size);
   }
+  if (!p) {
+    debug_log("FATAL: ZoneBase alloc failed entirely");
+    *size = 4 * 1024 * 1024;
+    p = (byte *)malloc(*size);
+  }
+  debug_logf("ZoneBase: allocated %d bytes at %p", *size, (void *)p);
   return p;
 }
 void I_Tactile(int a, int b, int c) {
@@ -926,9 +938,15 @@ void I_InitTimer(void) { base_time = get_ms(); }
 /* VIDEO */
 void I_InitGraphics(void) {
   int i;
+  debug_log("I_InitGraphics: allocating video buffer");
   I_VideoBuffer = (byte *)calloc(SCREENWIDTH * SCREENHEIGHT, 1);
+  if (!I_VideoBuffer) {
+    debug_log("FATAL: I_VideoBuffer alloc failed");
+    sceKernelExitProcess(0);
+  }
   for (i = 0; i < 256; i++)
     cmap[i] = 0xFF000000u | ((uint32_t)i << 16) | ((uint32_t)i << 8) | i;
+  debug_log("I_InitGraphics: done");
 }
 void I_SetPalette(byte *pal) {
   int i;
@@ -1380,16 +1398,24 @@ int main(int argc, char **argv) {
   sceIoMkdir("ux0:/data/", 0777);
   sceIoMkdir("ux0:/data/batmandoom/", 0777);
   sceIoRemove("ux0:/data/batmandoom/debug.log");
-  debug_log("=== Batman Doom Vita v1.0 ===");
+  debug_log("=== Batman Doom Vita v1.1 ===");
 
+  debug_log("Step 1: init_display");
   init_display();
   if (!display_ready) {
     debug_log("FATAL: no display");
+    sceKernelDelayThread(3000000);
     sceKernelExitProcess(0);
     return 1;
   }
+  debug_log("Step 2: display OK");
   base_time = get_ms();
 
+  /* Set savegamedir early — D_DoomMain reads it during init */
+  savegamedir = strdup("ux0:/data/batmandoom/");
+  debug_logf("savegamedir: %s", savegamedir);
+
+  debug_log("Step 3: searching WADs");
   for (i = 0; iwad_paths[i]; i++) {
     SceUID fd = sceIoOpen(iwad_paths[i], SCE_O_RDONLY, 0);
     if (fd >= 0) {
@@ -1408,7 +1434,7 @@ int main(int argc, char **argv) {
   }
 
   if (!iwad) {
-    debug_log("NO doom2.wad!");
+    debug_log("FATAL: NO doom2.wad found!");
     sceKernelDelayThread(5000000);
     sceKernelExitProcess(0);
     return 1;
@@ -1416,9 +1442,12 @@ int main(int argc, char **argv) {
   debug_logf("IWAD: %s", iwad);
   if (pwad)
     debug_logf("PWAD: %s", pwad);
+  else
+    debug_log("WARNING: no batman.wad found, running vanilla Doom 2");
 
   base_time = get_ms();
 
+  debug_log("Step 4: calling doomgeneric_Create");
   if (pwad) {
     char *nargv[] = {"BatmanDoom", "-iwad",      (char *)iwad,
                      "-file",      (char *)pwad, NULL};
@@ -1428,9 +1457,8 @@ int main(int argc, char **argv) {
     doomgeneric_Create(3, nargv);
   }
 
-  savegamedir = strdup("ux0:/data/batmandoom/");
-  debug_logf("savegamedir: %s", savegamedir);
-  debug_log("Entering main loop");
+  /* D_DoomMain() never returns – this is only reached on error */
+  debug_log("WARNING: doomgeneric_Create returned (unexpected)");
   while (1) {
     doomgeneric_Tick();
   }
