@@ -711,9 +711,9 @@ static void opl_mix_into(int32_t *accum, int ns) {
     }
     memset(buf, 0, sizeof(buf));
     OPL3_GenerateResampled(&opl_music.chip, buf);
-    /* Boost OPL output — original * 2 was too quiet */
-    accum[s * 2 + 0] += ((int32_t)buf[0] * mv * 8) / 15;
-    accum[s * 2 + 1] += ((int32_t)buf[1] * mv * 8) / 15;
+    /* OPL output — * 2 gives clean output without clipping */
+    accum[s * 2 + 0] += ((int32_t)buf[0] * mv * 2) / 15;
+    accum[s * 2 + 1] += ((int32_t)buf[1] * mv * 2) / 15;
     /* One-time diagnostic */
     if (!opl_diag_done && (buf[0] != 0 || buf[1] != 0)) {
       opl_diag_done = 1;
