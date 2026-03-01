@@ -82,7 +82,7 @@ jobs:
             echo '#define FEATURE_DEHACKED 1' >> doomfeatures.h
           fi
           # Patch d_main.c to auto-load DEHACKED lumps from PWADs
-          python3 ../../scripts/patch_dehacked.py
+          python3 ${GITHUB_WORKSPACE}/scripts/patch_dehacked.py
           # Fix R_DrawVisSprite: modular wrapping for PWAD sprites
           sed -i '/texturecolumn = frac>>FRACBITS;/a\\tif (SHORT(patch->width) > 0) { texturecolumn = texturecolumn % SHORT(patch->width); if (texturecolumn < 0) texturecolumn += SHORT(patch->width); }' r_things.c
           # Safety: clamp dc_yl and dc_yh in R_DrawColumn
