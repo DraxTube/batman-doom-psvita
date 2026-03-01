@@ -15,6 +15,7 @@ extern char *savegamedir;
 extern void G_SaveGame(int slot, char *description);
 extern void G_LoadGame(char *name);
 extern char *P_SaveGameFile(int slot);
+extern int gamestate; /* 0 = GS_LEVEL, only save/load during gameplay */
 #include "opl3.h"
 #include <math.h>
 #include <psp2/apputil.h>
@@ -45,7 +46,7 @@ extern char *P_SaveGameFile(int slot);
 
 byte *I_VideoBuffer = NULL;
 int screenvisible = 1, screensaver_mode = 0, vanilla_keyboard_mapping = 0;
-int usegamma = 0, usemouse = 0, snd_musicdevice = 0;
+int usegamma = 0, usemouse = 0, snd_musicdevice = 3; /* 3 = SB/OPL for music */
 int mouse_acceleration = 0, mouse_threshold = 0;
 
 static SceUID fb_memuid;
@@ -196,21 +197,21 @@ static void do_poll_input(void) {
     int r = (pad.buttons & SCE_CTRL_RIGHT) != 0;
     int rw = (pad_prev.buttons & SCE_CTRL_RIGHT) != 0;
 
-    /* D-Pad Up = Quick Save */
-    if (u && !uw && quicksave_cooldown == 0) {
+    /* D-Pad Up = Quick Save (only during gameplay) */
+    if (u && !uw && quicksave_cooldown == 0 && gamestate == 0) {
       G_SaveGame(0, "VITA SAVE");
       debug_logf("QuickSave slot 0, dir=%s",
                  savegamedir ? savegamedir : "(null)");
-      quicksave_cooldown = TICRATE;
+      quicksave_cooldown = TICRATE * 2;
     }
-    /* D-Pad Down = Quick Load */
-    if (d && !dw && quickload_cooldown == 0) {
+    /* D-Pad Down = Quick Load (only during gameplay) */
+    if (d && !dw && quickload_cooldown == 0 && gamestate == 0) {
       char *path = P_SaveGameFile(0);
       if (path) {
         G_LoadGame(path);
         debug_logf("QuickLoad: %s", path);
       }
-      quickload_cooldown = TICRATE;
+      quickload_cooldown = TICRATE * 2;
     }
     /* D-Pad Right = Next Weapon */
     if (r && !rw && weapon_cycle_cooldown == 0) {
@@ -218,8 +219,7 @@ static void do_poll_input(void) {
       if (current_weapon > 7)
         current_weapon = 1;
       kq_push(1, '0' + current_weapon);
-      kq_push(0, '0' + current_weapon);
-      weapon_cycle_cooldown = 5;
+      weapon_cycle_cooldown = 10;
     }
     /* D-Pad Left = Previous Weapon */
     if (l && !lw && weapon_cycle_cooldown == 0) {
@@ -227,8 +227,7 @@ static void do_poll_input(void) {
       if (current_weapon < 1)
         current_weapon = 7;
       kq_push(1, '0' + current_weapon);
-      kq_push(0, '0' + current_weapon);
-      weapon_cycle_cooldown = 5;
+      weapon_cycle_cooldown = 10;
     }
   }
 
@@ -1457,8 +1456,8 @@ int main(int argc, char **argv) {
     doomgeneric_Create(3, nargv);
   }
 
-  /* D_DoomMain() never returns – this is only reached on error */
-  debug_log("WARNING: doomgeneric_Create returned (unexpected)");
+  /* D_DoomMain() returned — game loop is doomgeneric_Tick() */
+  debug_log("Entering main loop (doomgeneric_Tick)");
   while (1) {
     doomgeneric_Tick();
   }
