@@ -40,16 +40,49 @@ jobs:
       - name: Patch doomgeneric for PWAD compatibility
         run: |
           cd doomgeneric/doomgeneric
-          # Disable RANGECHECK
-          sed -i 's/^#define RANGECHECK/\/\/ #define RANGECHECK/' doomdef.h
-          # Inject DEH_LoadFromWADs() call after W_GenerateHashTable()
+
+          # 1. Disable RANGECHECK (can crash on PWAD data)
+          sed -i 's/^#define RANGECHECK/\/\/ #define RANGECHECK/' doomdef.h || true
+
+          # 2. Inject DEH_LoadFromWADs() call after W_GenerateHashTable()
           python3 ${GITHUB_WORKSPACE}/scripts/patch_dehacked.py
-          # Expand sprite/flat namespace to cover ALL WADs (IWAD+PWAD)
+
+          # 3. Expand sprite/flat namespace to cover ALL WADs (IWAD+PWAD)
           python3 ${GITHUB_WORKSPACE}/scripts/patch_sprite_range.py
-          # Fix R_DrawVisSprite: modular wrapping for PWAD sprites
-          sed -i '/texturecolumn = frac>>FRACBITS;/a\\tif (SHORT(patch->width) > 0) { texturecolumn = texturecolumn % SHORT(patch->width); if (texturecolumn < 0) texturecolumn += SHORT(patch->width); }' r_things.c
-          # Safety: clamp dc_yl and dc_yh in R_DrawColumn
-          sed -i 's/count = dc_yh - dc_yl;/if (dc_yl < 0) dc_yl = 0; if (dc_yh >= SCREENHEIGHT) dc_yh = SCREENHEIGHT - 1; count = dc_yh - dc_yl;/' r_draw.c || true
+
+          # 4. Fix R_DrawVisSprite: modular wrapping for PWAD sprites
+          #    Use a more careful multi-line approach instead of one-liner sed
+          python3 -c "
+          import re
+          with open('r_things.c', 'r') as f:
+              content = f.read()
+          old = 'texturecolumn = frac>>FRACBITS;'
+          new_code = '''texturecolumn = frac>>FRACBITS;
+          if (SHORT(patch->width) > 0) { texturecolumn = texturecolumn % SHORT(patch->width); if (texturecolumn < 0) texturecolumn += SHORT(patch->width); }'''
+          if old in content and 'texturecolumn % SHORT' not in content:
+              content = content.replace(old, new_code, 1)
+              print('Patched R_DrawVisSprite: added sprite column wrapping')
+          else:
+              print('R_DrawVisSprite patch skipped (already applied or pattern not found)')
+          with open('r_things.c', 'w') as f:
+              f.write(content)
+          "
+
+          # 5. Safety: clamp dc_yl and dc_yh in R_DrawColumn
+          python3 -c "
+          with open('r_draw.c', 'r') as f:
+              content = f.read()
+          old = 'count = dc_yh - dc_yl;'
+          new_code = 'if (dc_yl < 0) dc_yl = 0; if (dc_yh >= SCREENHEIGHT) dc_yh = SCREENHEIGHT - 1; count = dc_yh - dc_yl;'
+          if old in content and 'if (dc_yl < 0)' not in content:
+              content = content.replace(old, new_code, 1)
+              print('Patched R_DrawColumn: added dc_yl/dc_yh clamping')
+          else:
+              print('R_DrawColumn patch skipped (already applied or pattern not found)')
+          with open('r_draw.c', 'w') as f:
+              f.write(content)
+          "
+
           echo "=== All patches applied ==="
 
       - name: Generate assets
@@ -59,7 +92,7 @@ jobs:
         run: |
           mkdir -p build && cd build
           cmake .. -DCMAKE_TOOLCHAIN_FILE=$VITASDK/share/vita.toolchain.cmake
-          make -j$(nproc)
+          make -j$(nproc) 2>&1 | tail -50
 
       - name: Upload VPK
         uses: actions/upload-artifact@v4
