@@ -108,26 +108,6 @@ static void analog_axis(int val, int nk, int pk, int *nh, int *ph) {
 }
 
 static int quicksave_cooldown = 0, quickload_cooldown = 0;
-static void check_quicksave(SceCtrlData *pad, SceCtrlData *prev) {
-    int lt = (pad->buttons & SCE_CTRL_LTRIGGER) != 0;
-    int rt = (pad->buttons & SCE_CTRL_RTRIGGER) != 0;
-    int up = (pad->buttons & SCE_CTRL_UP) != 0;
-    int up_was = (prev->buttons & SCE_CTRL_UP) != 0;
-    int dn = (pad->buttons & SCE_CTRL_DOWN) != 0;
-    int dn_was = (prev->buttons & SCE_CTRL_DOWN) != 0;
-    if (quicksave_cooldown > 0) quicksave_cooldown--;
-    if (quickload_cooldown > 0) quickload_cooldown--;
-    if (lt && rt && up && !up_was && quicksave_cooldown == 0) {
-        G_SaveGame(0, "VITA SAVE");
-        debug_logf("Save slot 0, dir=%s", savegamedir ? savegamedir : "(null)");
-        quicksave_cooldown = TICRATE;
-    }
-    if (lt && rt && dn && !dn_was && quickload_cooldown == 0) {
-        char *path = P_SaveGameFile(0);
-        if (path) { G_LoadGame(path); debug_logf("Load: %s", path); }
-        quickload_cooldown = TICRATE;
-    }
-}
 
 static void do_poll_input(void) {
     SceCtrlData pad; int i;
@@ -140,7 +120,10 @@ static void do_poll_input(void) {
     }
     sceCtrlPeekBufferPositive(0, &pad, 1);
     if (weapon_cycle_cooldown > 0) weapon_cycle_cooldown--;
-    check_quicksave(&pad, &pad_prev);
+    if (quicksave_cooldown > 0) quicksave_cooldown--;
+    if (quickload_cooldown > 0) quickload_cooldown--;
+
+    /* Face buttons + triggers */
     { struct { unsigned btn; unsigned char key; } bm[] = {
         {SCE_CTRL_CROSS, KEY_USE}, {SCE_CTRL_SQUARE, KEY_FIRE},
         {SCE_CTRL_CIRCLE, KEY_RALT}, {SCE_CTRL_TRIANGLE, KEY_TAB},
@@ -154,29 +137,54 @@ static void do_poll_input(void) {
         if (!now && was) kq_push(0, bm[i].key);
       }
     }
-    { int ltrig = (pad.buttons & SCE_CTRL_LTRIGGER) != 0;
-      int rtrig = (pad.buttons & SCE_CTRL_RTRIGGER) != 0;
-      if (ltrig && rtrig) { /* skip dpad for quicksave combo */ }
-      else if (ltrig && weapon_cycle_cooldown == 0) {
-        int u=(pad.buttons&SCE_CTRL_UP)!=0, uw=(pad_prev.buttons&SCE_CTRL_UP)!=0;
-        int d=(pad.buttons&SCE_CTRL_DOWN)!=0, dw=(pad_prev.buttons&SCE_CTRL_DOWN)!=0;
-        int l=(pad.buttons&SCE_CTRL_LEFT)!=0, lw=(pad_prev.buttons&SCE_CTRL_LEFT)!=0;
-        int r=(pad.buttons&SCE_CTRL_RIGHT)!=0,rw=(pad_prev.buttons&SCE_CTRL_RIGHT)!=0;
-        if(u&&!uw){current_weapon++;if(current_weapon>7)current_weapon=1;kq_push(1,'0'+current_weapon);kq_push(0,'0'+current_weapon);weapon_cycle_cooldown=5;}
-        if(d&&!dw){current_weapon--;if(current_weapon<1)current_weapon=7;kq_push(1,'0'+current_weapon);kq_push(0,'0'+current_weapon);weapon_cycle_cooldown=5;}
-        if(l&&!lw){current_weapon--;if(current_weapon<1)current_weapon=7;kq_push(1,'0'+current_weapon);kq_push(0,'0'+current_weapon);weapon_cycle_cooldown=5;}
-        if(r&&!rw){current_weapon++;if(current_weapon>7)current_weapon=1;kq_push(1,'0'+current_weapon);kq_push(0,'0'+current_weapon);weapon_cycle_cooldown=5;}
-      } else if (!ltrig) {
-        struct { unsigned btn; unsigned char key; } dp[] = {
-          {SCE_CTRL_UP,KEY_UPARROW},{SCE_CTRL_DOWN,KEY_DOWNARROW},
-          {SCE_CTRL_LEFT,KEY_LEFTARROW},{SCE_CTRL_RIGHT,KEY_RIGHTARROW},{0,0}
-        };
-        for(i=0;dp[i].btn;i++){int n=(pad.buttons&dp[i].btn)!=0;int w=(pad_prev.buttons&dp[i].btn)!=0;if(n&&!w)kq_push(1,dp[i].key);if(!n&&w)kq_push(0,dp[i].key);}
-      }
+
+    /* D-Pad: direct quicksave/load and weapon cycling */
+    {
+        int u  = (pad.buttons & SCE_CTRL_UP) != 0;
+        int uw = (pad_prev.buttons & SCE_CTRL_UP) != 0;
+        int d  = (pad.buttons & SCE_CTRL_DOWN) != 0;
+        int dw = (pad_prev.buttons & SCE_CTRL_DOWN) != 0;
+        int l  = (pad.buttons & SCE_CTRL_LEFT) != 0;
+        int lw = (pad_prev.buttons & SCE_CTRL_LEFT) != 0;
+        int r  = (pad.buttons & SCE_CTRL_RIGHT) != 0;
+        int rw = (pad_prev.buttons & SCE_CTRL_RIGHT) != 0;
+
+        /* D-Pad Up = Quick Save */
+        if (u && !uw && quicksave_cooldown == 0) {
+            G_SaveGame(0, "VITA SAVE");
+            debug_logf("QuickSave slot 0, dir=%s", savegamedir ? savegamedir : "(null)");
+            quicksave_cooldown = TICRATE;
+        }
+        /* D-Pad Down = Quick Load */
+        if (d && !dw && quickload_cooldown == 0) {
+            char *path = P_SaveGameFile(0);
+            if (path) { G_LoadGame(path); debug_logf("QuickLoad: %s", path); }
+            quickload_cooldown = TICRATE;
+        }
+        /* D-Pad Right = Next Weapon */
+        if (r && !rw && weapon_cycle_cooldown == 0) {
+            current_weapon++;
+            if (current_weapon > 7) current_weapon = 1;
+            kq_push(1, '0' + current_weapon);
+            kq_push(0, '0' + current_weapon);
+            weapon_cycle_cooldown = 5;
+        }
+        /* D-Pad Left = Previous Weapon */
+        if (l && !lw && weapon_cycle_cooldown == 0) {
+            current_weapon--;
+            if (current_weapon < 1) current_weapon = 7;
+            kq_push(1, '0' + current_weapon);
+            kq_push(0, '0' + current_weapon);
+            weapon_cycle_cooldown = 5;
+        }
     }
+
+    /* Analog sticks: left = move/strafe, right = turn */
     analog_axis(pad.ly-128,KEY_UPARROW,KEY_DOWNARROW,&analog_held[0],&analog_held[1]);
     analog_axis(pad.lx-128,KEY_STRAFE_L,KEY_STRAFE_R,&analog_held[2],&analog_held[3]);
     analog_axis(pad.rx-128,KEY_LEFTARROW,KEY_RIGHTARROW,&analog_held[4],&analog_held[5]);
+
+    /* Front touch: weapon select by slot */
     { SceTouchData touch; sceTouchPeek(SCE_TOUCH_PORT_FRONT, &touch, 1);
       if(touch.reportNum>0&&touch.report[0].y/2<60){int slot=(touch.report[0].x/2)/(VITA_W/7);
         if(slot>=0&&slot<7){current_weapon=slot+1;kq_push(1,'1'+slot);kq_push(0,'1'+slot);}}
