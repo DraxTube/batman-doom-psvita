@@ -4,10 +4,10 @@
  * Handles Thing, Frame, Pointer, Weapon, Text blocks.
  */
 #include <ctype.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
 
 #include "d_items.h"
 #include "d_think.h"
@@ -18,6 +18,22 @@
 #include "w_wad.h"
 #include "z_zone.h"
 
+/* Debug logging — same file as main vita code */
+static void deh_log(const char *msg) {
+  FILE *f = fopen("ux0:/data/batmandoom/debug.log", "a");
+  if (f) {
+    fprintf(f, "DEH: %s\n", msg);
+    fclose(f);
+  }
+}
+static void deh_logf(const char *fmt, ...) {
+  char buf[512];
+  va_list a;
+  va_start(a, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, a);
+  va_end(a);
+  deh_log(buf);
+}
 
 /* ---- parser state ---- */
 static const char *dp;   /* current read position */
@@ -233,12 +249,12 @@ static void p_text(int old_len, int new_len) {
   if (old_len == 4 && new_len == 4 && n_ren < MAX_REN) {
     int i;
     for (i = 0; i < NUMSPRITES; i++) {
-      if (strncmp(sprnames[i], otxt, 4) == 0) {
+      if (sprnames[i] && strncmp(sprnames[i], otxt, 4) == 0) {
         memcpy(ren_buf[n_ren], ntxt, 4);
         ren_buf[n_ren][4] = '\0';
         sprnames[i] = ren_buf[n_ren];
         n_ren++;
-        printf("  DEH: sprite %s -> %s\n", otxt, ntxt);
+        deh_logf("sprite %s -> %s", otxt, ntxt);
         break;
       }
     }
@@ -260,19 +276,40 @@ void DEH_LoadFromWADs(void) {
   int loaded = 0;
   char line[256];
 
+  deh_log("DEH_LoadFromWADs starting");
+
+  if (!lumpinfo || numlumps == 0) {
+    deh_log("No lumps available, skipping DEHACKED");
+    return;
+  }
+
   save_act();
+
+  deh_logf("Searching %u lumps for DEHACKED", numlumps);
 
   for (i = 0; i < numlumps; i++) {
     if (strncasecmp(lumpinfo[i].name, "DEHACKED", 8) != 0)
       continue;
+
     int len = W_LumpLength(i);
     if (len <= 0)
       continue;
 
+    deh_logf("Found DEHACKED lump %u, size=%d bytes", i, len);
+
     char *data = (char *)malloc(len + 1);
-    if (!data)
+    if (!data) {
+      deh_log("Failed to allocate memory for DEHACKED lump");
       continue;
-    memcpy(data, W_CacheLumpNum(i, PU_CACHE), len);
+    }
+
+    byte *lumpdata = W_CacheLumpNum(i, PU_CACHE);
+    if (!lumpdata) {
+      deh_log("Failed to cache DEHACKED lump");
+      free(data);
+      continue;
+    }
+    memcpy(data, lumpdata, len);
     data[len] = '\0';
 
     dp = data;
@@ -303,8 +340,10 @@ void DEH_LoadFromWADs(void) {
 
     free(data);
     loaded++;
-    printf("  DEH: processed lump %u (%d bytes)\n", i, len);
+    deh_logf("Processed DEHACKED lump %u (%d bytes)", i, len);
   }
   if (loaded > 0)
-    printf("  DEH: %d DEHACKED lump(s) loaded\n", loaded);
+    deh_logf("%d DEHACKED lump(s) loaded successfully", loaded);
+  else
+    deh_log("No DEHACKED lumps found in any WAD");
 }
