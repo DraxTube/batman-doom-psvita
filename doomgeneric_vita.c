@@ -694,6 +694,7 @@ static void mus_opl_tick(void) {
     opl_music.delay_left--;
 }
 
+static int opl_diag_done = 0;
 static void opl_mix_into(int32_t *accum, int ns) {
   int s, mv;
   if (!opl_music.playing)
@@ -710,8 +711,15 @@ static void opl_mix_into(int32_t *accum, int ns) {
     }
     memset(buf, 0, sizeof(buf));
     OPL3_GenerateResampled(&opl_music.chip, buf);
-    accum[s * 2 + 0] += ((int32_t)buf[0] * mv * 2) / 15;
-    accum[s * 2 + 1] += ((int32_t)buf[1] * mv * 2) / 15;
+    /* Boost OPL output — original * 2 was too quiet */
+    accum[s * 2 + 0] += ((int32_t)buf[0] * mv * 8) / 15;
+    accum[s * 2 + 1] += ((int32_t)buf[1] * mv * 8) / 15;
+    /* One-time diagnostic */
+    if (!opl_diag_done && (buf[0] != 0 || buf[1] != 0)) {
+      opl_diag_done = 1;
+      debug_logf("OPL output: first non-zero sample buf[0]=%d buf[1]=%d mv=%d",
+                 buf[0], buf[1], mv);
+    }
   }
 }
 
@@ -1240,11 +1248,13 @@ void I_ShutdownMusic(void) {
 void I_SetMusicVolume(int v) {
   if (mus_mutex >= 0) {
     sceKernelLockMutex(mus_mutex, 1, NULL);
-    opl_music.music_volume = v;
-    if (opl_music.music_volume < 0)
-      opl_music.music_volume = 0;
+    /* Engine sends 0–127, scale to 0–15 for OPL */
+    opl_music.music_volume = (v * 15) / 127;
+    if (opl_music.music_volume < 1 && v > 0)
+      opl_music.music_volume = 1; /* don't mute if engine wants any sound */
     if (opl_music.music_volume > 15)
       opl_music.music_volume = 15;
+    debug_logf("I_SetMusicVolume: engine=%d opl=%d", v, opl_music.music_volume);
     sceKernelUnlockMutex(mus_mutex, 1);
   }
 }
