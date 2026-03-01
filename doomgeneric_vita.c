@@ -34,7 +34,6 @@ extern char *P_SaveGameFile(int slot);
 #include <string.h>
 #include <time.h>
 
-
 #define TICRATE 35
 #define SCREENWIDTH 320
 #define SCREENHEIGHT 200
@@ -1421,9 +1420,9 @@ int main(int argc, char **argv) {
   base_time = get_ms();
 
   if (pwad) {
-    char *nargv[] = {"BatmanDoom", "-iwad",    (char *)iwad, "-merge",
-                     (char *)pwad, "-dehlump", NULL};
-    doomgeneric_Create(7, nargv);
+    char *nargv[] = {"BatmanDoom", "-iwad",      (char *)iwad,
+                     "-file",      (char *)pwad, NULL};
+    doomgeneric_Create(5, nargv);
   } else {
     char *nargv[] = {"BatmanDoom", "-iwad", (char *)iwad, NULL};
     doomgeneric_Create(3, nargv);
