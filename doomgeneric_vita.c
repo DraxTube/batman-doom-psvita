@@ -1220,7 +1220,11 @@ void I_ShutdownSound(void) {
 void I_BindSoundVariables(void) {}
 
 /* MUSIC interface */
-void I_InitMusic(void) { load_genmidi(); }
+void I_InitMusic(void) {
+  debug_log("I_InitMusic: loading GENMIDI");
+  load_genmidi();
+  debug_logf("I_InitMusic: genmidi_loaded=%d", opl_music.genmidi_loaded);
+}
 void I_ShutdownMusic(void) {
   int i;
   if (mus_mutex >= 0) {
@@ -1284,10 +1288,14 @@ boolean I_MusicIsPlaying(void) {
 void *I_RegisterSong(void *data, int len) {
   byte *d = (byte *)data, *md;
   int so, sl, i;
+  debug_logf("I_RegisterSong: data=%p len=%d", data, len);
   if (!data || len < 16)
     return NULL;
-  if (d[0] != 'M' || d[1] != 'U' || d[2] != 'S' || d[3] != 0x1A)
+  if (d[0] != 'M' || d[1] != 'U' || d[2] != 'S' || d[3] != 0x1A) {
+    debug_log("I_RegisterSong: not MUS format");
     return (void *)1;
+  }
+  debug_log("I_RegisterSong: valid MUS data");
   sl = d[4] | (d[5] << 8);
   so = d[6] | (d[7] << 8);
   if (so >= len || so < 12)
@@ -1347,6 +1355,7 @@ void I_UnRegisterSong(void *handle) {
 }
 void I_PlaySong(void *handle, boolean looping) {
   int i;
+  debug_logf("I_PlaySong: handle=%p looping=%d", handle, looping);
   if (!handle || handle == (void *)1)
     return;
   if (mus_mutex >= 0)
@@ -1470,6 +1479,11 @@ int main(int argc, char **argv) {
     char *nargv[] = {"BatmanDoom", "-iwad", (char *)iwad, NULL};
     doomgeneric_Create(3, nargv);
   }
+
+  /* D_DoomMain() overrides savegamedir — fix it for Vita */
+  savegamedir = strdup("ux0:/data/batmandoom/");
+  sceIoMkdir("ux0:/data/batmandoom/", 0777);
+  debug_logf("savegamedir (post-init): %s", savegamedir);
 
   /* D_DoomMain() returned — game loop is doomgeneric_Tick() */
   debug_log("Entering main loop (doomgeneric_Tick)");
